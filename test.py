@@ -9,7 +9,7 @@ from collections import deque
 # --------------------------
 MODEL_PATH = "rps_mlp.pth"  # 你训练的模型路径
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-SMOOTH_WINDOW = 5  # 平滑窗口大小
+SMOOTH_WINDOW = 3  # 平滑窗口大小
 
 # --------------------------
 # 模型定义（和 train_mlp.py 保持一致）

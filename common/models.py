@@ -7,6 +7,7 @@
 
 import torch
 import torch.nn as nn
+from typing import List, Tuple
 
 
 class GestureMLP(nn.Module):
@@ -48,4 +49,96 @@ def load_gesture_mlp(model_path: str, device: str, input_size: int = 63, hidden_
     model.to(device)
     model.eval()
     return model, classes
+
+
+class DepthwiseSeparableConv1D(nn.Module):
+    def __init__(self, in_ch: int, out_ch: int, k: int = 3, p: int = 1):
+        super().__init__()
+        self.depth = nn.Conv1d(
+            in_ch, in_ch, kernel_size=k, padding=p, groups=in_ch
+        )
+        self.point = nn.Conv1d(in_ch, out_ch, kernel_size=1)
+        self.bn = nn.BatchNorm1d(out_ch)
+        self.act = nn.ReLU(inplace=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.depth(x)
+        x = self.point(x)
+        x = self.bn(x)
+        return self.act(x)
+
+
+class GestureCNNTemporal(nn.Module):
+    """轻量级 CNN + GRU 时序模型
+
+    输入：
+    - 单帧：形状 [B, 63]
+    - 序列：形状 [B, T, 63]
+
+    结构：
+    - 1D 深度可分离卷积堆叠（3→16→24→32→32）
+    - 可选最多 2 个最大池化层
+    - 全局平均池化得到帧级特征 (32)
+    - GRU(hidden<=64) 进行时序处理，输出分类
+    """
+
+    def __init__(
+        self,
+        num_classes: int,
+        hidden_size: int = 64,
+        use_maxpool: bool = True,
+    ):
+        super().__init__()
+        self.use_maxpool = use_maxpool
+        self.conv1 = DepthwiseSeparableConv1D(3, 16)
+        self.conv2 = DepthwiseSeparableConv1D(16, 24)
+        self.conv3 = DepthwiseSeparableConv1D(24, 32)
+        self.conv4 = DepthwiseSeparableConv1D(32, 32)
+        self.pool = nn.MaxPool1d(2)
+        self.gru = nn.GRU(32, hidden_size, batch_first=True)
+        self.head = nn.Linear(hidden_size, num_classes)
+
+    def _cnn_frame(self, x63: torch.Tensor) -> torch.Tensor:
+        b = x63.size(0)
+        x = x63.view(b, 21, 3).transpose(1, 2)  # [B, 3, 21]
+        x = self.conv1(x)
+        if self.use_maxpool:
+            x = self.pool(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        if self.use_maxpool:
+            x = self.pool(x)
+        x = self.conv4(x)
+        x = x.mean(dim=2)  # GAP → [B, 32]
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dim() == 2:
+            feat = self._cnn_frame(x)
+            feat = feat.unsqueeze(1)
+        else:
+            b, t, f = x.size()
+            x_flat = x.view(b * t, f)
+            feat = self._cnn_frame(x_flat)
+            feat = feat.view(b, t, -1)
+        out, _ = self.gru(feat)
+        last = out[:, -1, :]
+        return self.head(last)
+
+
+def load_gesture_cnn_temporal(
+    model_path: str, device: str
+) -> Tuple[nn.Module, List[str], dict]:
+    ckpt = torch.load(model_path, map_location=device, weights_only=False)
+    classes = list(ckpt["classes"])  # type: ignore
+    meta = ckpt.get("meta", {})
+    hidden = int(meta.get("hidden_size", 64))
+    use_maxpool = bool(meta.get("use_maxpool", True))
+    model = GestureCNNTemporal(
+        num_classes=len(classes), hidden_size=hidden, use_maxpool=use_maxpool
+    )
+    model.load_state_dict(ckpt["model_state"])  # type: ignore
+    model.to(device)
+    model.eval()
+    return model, classes, meta
 

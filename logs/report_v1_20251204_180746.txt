@@ -1,0 +1,15 @@
+              precision    recall  f1-score   support
+
+       paper       0.99      1.00      1.00       322
+        rock       1.00      0.99      1.00       310
+    scissors       1.00      1.00      1.00       308
+
+    accuracy                           1.00       940
+   macro avg       1.00      1.00      1.00       940
+weighted avg       1.00      1.00      1.00       940
+
+
+Confusion Matrix:
+322,0,0
+3,307,0
+0,0,308

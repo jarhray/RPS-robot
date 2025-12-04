@@ -1,8 +1,5 @@
-mediapipe==0.10.14
-mujoco==3.3.7
-numpy==2.3.5
-opencv_contrib_python==4.12.0.88
-opencv_python==4.12.0.88
-opencv_python_headless==4.10.0.84
-scikit_learn==1.7.2
-torch==2.7.1+cu126
+numpy>=1.23
+opencv-python>=4.7
+mediapipe>=0.10.0
+torch>=2.2.0
+scikit-learn>=1.2.0
